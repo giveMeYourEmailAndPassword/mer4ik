@@ -1,8 +1,15 @@
-import React, { useState, useRef, useCallback } from 'react';
-import type { MerchTemplate, UserImage } from '../types';
-import type { ChangeEvent } from 'react';
-import { IconButton } from './ui/IconButton';
-import { ArrowLeft, Download, Upload, ZoomIn, ZoomOut, RotateCw } from 'lucide-react';
+import React, { useState, useRef, useCallback, useEffect } from "react";
+import type { MerchTemplate, UserImage } from "../types";
+import type { ChangeEvent } from "react";
+import { IconButton } from "./ui/IconButton";
+import {
+  ArrowLeft,
+  Download,
+  Upload,
+  ZoomIn,
+  ZoomOut,
+  RotateCw,
+} from "lucide-react";
 
 interface SimpleEditorProps {
   template: MerchTemplate;
@@ -17,7 +24,7 @@ export const SimpleEditor = ({
   onBack,
   userImage,
   setUserImage,
-  onSwitchTemplate
+  onSwitchTemplate,
 }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
@@ -26,110 +33,143 @@ export const SimpleEditor = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [draggedImage, setDraggedImage] = useState<UserImage | null>(null);
 
+  // Новые состояния для жестов
+  const [initialDistance, setInitialDistance] = useState<number | null>(null);
+  const [initialScale, setInitialScale] = useState<number | null>(null);
+  const [isPinching, setIsPinching] = useState(false);
+  const [showRotateButton, setShowRotateButton] = useState(false);
+  const [lastTapTime, setLastTapTime] = useState(0);
+  const [isRotateMode, setIsRotateMode] = useState(false); // Режим вращения
+  const [rotateStartX, setRotateStartX] = useState(0); // Начальная позиция для вращения
+
   // Обработчик загрузки изображения
-  const handleImageUpload = useCallback((event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const img = new Image();
-        img.onload = () => {
-          // Масштабируем изображение под печатную область
-          const maxWidth = template.printableArea.width * 0.8;
-          const maxHeight = template.printableArea.height * 0.8;
+  const handleImageUpload = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+            // Масштабируем изображение под печатную область
+            const maxWidth = template.printableArea.width * 0.8;
+            const maxHeight = template.printableArea.height * 0.8;
 
-          let width = img.width;
-          let height = img.height;
+            let width = img.width;
+            let height = img.height;
 
-          if (width > maxWidth) {
-            height = (maxWidth / width) * height;
-            width = maxWidth;
-          }
+            if (width > maxWidth) {
+              height = (maxWidth / width) * height;
+              width = maxWidth;
+            }
 
-          if (height > maxHeight) {
-            width = (maxHeight / height) * width;
-            height = maxHeight;
-          }
+            if (height > maxHeight) {
+              width = (maxHeight / height) * width;
+              height = maxHeight;
+            }
 
-          const newUserImage: UserImage = {
-            id: Date.now().toString(),
-            src: e.target?.result as string,
-            x: template.printableArea.x + (template.printableArea.width - width) / 2,
-            y: template.printableArea.y + (template.printableArea.height - height) / 2,
-            width,
-            height,
-            rotation: 0,
-            opacity: 1
+            const newUserImage: UserImage = {
+              id: Date.now().toString(),
+              src: e.target?.result as string,
+              x:
+                template.printableArea.x +
+                (template.printableArea.width - width) / 2,
+              y:
+                template.printableArea.y +
+                (template.printableArea.height - height) / 2,
+              width,
+              height,
+              rotation: 0,
+              opacity: 1,
+            };
+
+            setUserImage(newUserImage);
           };
-
-          setUserImage(newUserImage);
+          img.src = e.target?.result as string;
         };
-        img.src = e.target?.result as string;
-      };
-      reader.readAsDataURL(file);
-    }
-  }, [template, setUserImage]);
+        reader.readAsDataURL(file);
+      }
+    },
+    [template, setUserImage]
+  );
 
   // Обработчики мышью
-  const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!userImage || !canvasRef.current) return;
-    const currentTemplate = templateRef.current;
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (!userImage || !canvasRef.current) return;
+      const currentTemplate = templateRef.current;
 
-    const rect = canvasRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) * (currentTemplate.canvasWidth / rect.width);
-    const y = (e.clientY - rect.top) * (currentTemplate.canvasHeight / rect.height);
+      const rect = canvasRef.current.getBoundingClientRect();
+      const x =
+        (e.clientX - rect.left) * (currentTemplate.canvasWidth / rect.width);
+      const y =
+        (e.clientY - rect.top) * (currentTemplate.canvasHeight / rect.height);
 
-    // Проверяем, кликнули ли на изображение
-    if (
-      x >= userImage.x &&
-      x <= userImage.x + userImage.width &&
-      y >= userImage.y &&
-      y <= userImage.y + userImage.height
-    ) {
-      // Предзагружаем изображение для перетаскивания
-      if (!tempDragImageRef.current && userImageRef.current) {
-        tempDragImageRef.current = userImageRef.current;
+      // Проверяем, кликнули ли на изображение
+      if (
+        x >= userImage.x &&
+        x <= userImage.x + userImage.width &&
+        y >= userImage.y &&
+        y <= userImage.y + userImage.height
+      ) {
+        // Предзагружаем изображение для перетаскивания
+        if (!tempDragImageRef.current && userImageRef.current) {
+          tempDragImageRef.current = userImageRef.current;
+        }
+
+        setIsDragging(true);
+        setDragStart({ x: x - userImage.x, y: y - userImage.y });
       }
+    },
+    [userImage]
+  );
 
-      setIsDragging(true);
-      setDragStart({ x: x - userImage.x, y: y - userImage.y });
-    }
-  }, [userImage]);
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (!isDragging || !userImage || !canvasRef.current) return;
+      const currentTemplate = templateRef.current;
 
-  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDragging || !userImage || !canvasRef.current) return;
-    const currentTemplate = templateRef.current;
+      const rect = canvasRef.current.getBoundingClientRect();
+      const x =
+        (e.clientX - rect.left) * (currentTemplate.canvasWidth / rect.width);
+      const y =
+        (e.clientY - rect.top) * (currentTemplate.canvasHeight / rect.height);
 
-    const rect = canvasRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) * (currentTemplate.canvasWidth / rect.width);
-    const y = (e.clientY - rect.top) * (currentTemplate.canvasHeight / rect.height);
+      const newX = Math.max(
+        currentTemplate.printableArea.x,
+        Math.min(
+          currentTemplate.printableArea.x +
+            currentTemplate.printableArea.width -
+            userImage.width,
+          x - dragStart.x
+        )
+      );
 
-    const newX = Math.max(
-      currentTemplate.printableArea.x,
-      Math.min(
-        currentTemplate.printableArea.x + currentTemplate.printableArea.width - userImage.width,
-        x - dragStart.x
-      )
-    );
+      const newY = Math.max(
+        currentTemplate.printableArea.y,
+        Math.min(
+          currentTemplate.printableArea.y +
+            currentTemplate.printableArea.height -
+            userImage.height,
+          y - dragStart.y
+        )
+      );
 
-    const newY = Math.max(
-      currentTemplate.printableArea.y,
-      Math.min(
-        currentTemplate.printableArea.y + currentTemplate.printableArea.height - userImage.height,
-        y - dragStart.y
-      )
-    );
+      // Обновляем временное изображение без ререндера компонента
+      const newDraggedImage = { ...userImage, x: newX, y: newY };
+      setDraggedImage(newDraggedImage);
 
-    // Обновляем временное изображение без ререндера компонента
-    const newDraggedImage = { ...userImage, x: newX, y: newY };
-    setDraggedImage(newDraggedImage);
-
-    // Рисуем напрямую на canvas без ререндера
-    drawCanvasWithImage(newDraggedImage);
-  }, [isDragging, userImage, dragStart]);
+      // Рисуем напрямую на canvas без ререндера
+      drawCanvasWithImage(newDraggedImage);
+    },
+    [isDragging, userImage, dragStart]
+  );
 
   const handleMouseUp = useCallback(() => {
     setIsDragging(false);
+    setIsPinching(false);
+    setInitialDistance(null);
+    setInitialScale(null);
 
     // Сохраняем финальную позицию если было перетаскивание
     if (draggedImage) {
@@ -140,66 +180,216 @@ export const SimpleEditor = ({
     }
   }, [draggedImage, setUserImage]);
 
+  // Функция для расчета расстояния между двумя точками
+  const getDistance = (touch1: Touch, touch2: Touch): number => {
+    const dx = touch1.clientX - touch2.clientX;
+    const dy = touch1.clientY - touch2.clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  // Функция для проверки, находится ли точка на изображении
+  const isPointOnImage = (x: number, y: number, image: UserImage): boolean => {
+    return (
+      x >= image.x &&
+      x <= image.x + image.width &&
+      y >= image.y &&
+      y <= image.y + image.height
+    );
+  };
+
+  // Функция для обработки быстрого двойного касания
+  const handleQuickTap = useCallback(
+    (e: React.TouchEvent<HTMLCanvasElement>) => {
+      const currentTime = Date.now();
+      if (currentTime - lastTapTime < 300) {
+        // Двойное касание - переключаем режим вращения
+        setIsRotateMode(!isRotateMode);
+        setShowRotateButton(!isRotateMode); // Показываем кнопку когда входим в режим
+      }
+      setLastTapTime(currentTime);
+    },
+    [lastTapTime, isRotateMode, showRotateButton]
+  );
+
   // Обработчики тач-событий
-  const handleTouchStart = useCallback((e: React.TouchEvent<HTMLCanvasElement>) => {
-    if (!userImage || !canvasRef.current) return;
-    const currentTemplate = templateRef.current;
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent<HTMLCanvasElement>) => {
+      if (!userImage || !canvasRef.current) return;
+      const currentTemplate = templateRef.current;
 
-    const rect = canvasRef.current.getBoundingClientRect();
-    const touch = e.touches[0];
-    const x = (touch.clientX - rect.left) * (currentTemplate.canvasWidth / rect.width);
-    const y = (touch.clientY - rect.top) * (currentTemplate.canvasHeight / rect.height);
+      const rect = canvasRef.current.getBoundingClientRect();
 
-    if (
-      x >= userImage.x &&
-      x <= userImage.x + userImage.width &&
-      y >= userImage.y &&
-      y <= userImage.y + userImage.height
-    ) {
-      // Предзагружаем изображение для перетаскивания
-      if (!tempDragImageRef.current && userImageRef.current) {
-        tempDragImageRef.current = userImageRef.current;
+      // Обработка жеста масштабирования двумя пальцами
+      if (e.touches.length === 2) {
+        // Рассчитываем начальное расстояние между пальцами
+        const distance = getDistance(e.touches[0], e.touches[1]);
+
+        // Проверяем, находится ли хотя бы один палец на изображении
+        const touch1 = e.touches[0];
+        const touch2 = e.touches[1];
+        const x1 =
+          (touch1.clientX - rect.left) *
+          (currentTemplate.canvasWidth / rect.width);
+        const y1 =
+          (touch1.clientY - rect.top) *
+          (currentTemplate.canvasHeight / rect.height);
+        const x2 =
+          (touch2.clientX - rect.left) *
+          (currentTemplate.canvasWidth / rect.width);
+        const y2 =
+          (touch2.clientY - rect.top) *
+          (currentTemplate.canvasHeight / rect.height);
+
+        const centerPointX = (x1 + x2) / 2;
+        const centerPointY = (y1 + y2) / 2;
+
+        if (isPointOnImage(centerPointX, centerPointY, userImage)) {
+          setInitialDistance(distance);
+          setInitialScale(userImage.width);
+          setIsPinching(true);
+          e.preventDefault();
+          return;
+        }
       }
 
-      setIsDragging(true);
-      setDragStart({ x: x - userImage.x, y: y - userImage.y });
-      e.preventDefault();
-    }
-  }, [userImage]);
+      // Обработка одиночного касания
+      if (e.touches.length === 1) {
+        const touch = e.touches[0];
+        const x =
+          (touch.clientX - rect.left) *
+          (currentTemplate.canvasWidth / rect.width);
+        const y =
+          (touch.clientY - rect.top) *
+          (currentTemplate.canvasHeight / rect.height);
 
-  const handleTouchMove = useCallback((e: React.TouchEvent<HTMLCanvasElement>) => {
-    if (!isDragging || !userImage || !canvasRef.current) return;
-    const currentTemplate = templateRef.current;
+        // Проверяем быстрое касание для показа кнопки вращения
+        handleQuickTap(e);
 
-    const rect = canvasRef.current.getBoundingClientRect();
-    const touch = e.touches[0];
-    const x = (touch.clientX - rect.left) * (currentTemplate.canvasWidth / rect.width);
-    const y = (touch.clientY - rect.top) * (currentTemplate.canvasHeight / rect.height);
+        if (isPointOnImage(x, y, userImage)) {
+          // Предзагружаем изображение для перетаскивания
+          if (!tempDragImageRef.current && userImageRef.current) {
+            tempDragImageRef.current = userImageRef.current;
+          }
 
-    const newX = Math.max(
-      currentTemplate.printableArea.x,
-      Math.min(
-        currentTemplate.printableArea.x + currentTemplate.printableArea.width - userImage.width,
-        x - dragStart.x
-      )
-    );
+          setIsDragging(true);
 
-    const newY = Math.max(
-      currentTemplate.printableArea.y,
-      Math.min(
-        currentTemplate.printableArea.y + currentTemplate.printableArea.height - userImage.height,
-        y - dragStart.y
-      )
-    );
+          if (isRotateMode) {
+            // В режиме вращения сохраняем начальную позицию X
+            setRotateStartX(touch.clientX);
+            setDragStart({ x: userImage.rotation, y: 0 });
+          } else {
+            // В режиме перемещения сохраняем смещение
+            setDragStart({ x: x - userImage.x, y: y - userImage.y });
+          }
+          e.preventDefault();
+        }
+      }
+    },
+    [userImage, handleQuickTap, isRotateMode]
+  );
 
-    // Обновляем временное изображение без ререндера компонента
-    const newDraggedImage = { ...userImage, x: newX, y: newY };
-    setDraggedImage(newDraggedImage);
+  const handleTouchMove = useCallback(
+    (e: React.TouchEvent<HTMLCanvasElement>) => {
+      if (!userImage || !canvasRef.current) return;
+      const currentTemplate = templateRef.current;
+      const rect = canvasRef.current.getBoundingClientRect();
 
-    // Рисуем напрямую на canvas без ререндера
-    drawCanvasWithImage(newDraggedImage);
-    e.preventDefault();
-  }, [isDragging, userImage, dragStart]);
+      // Обработка жеста масштабирования двумя пальцами
+      if (
+        e.touches.length === 2 &&
+        isPinching &&
+        initialDistance !== null &&
+        initialScale !== null
+      ) {
+        const currentDistance = getDistance(e.touches[0], e.touches[1]);
+        const scale = currentDistance / initialDistance;
+
+        const newWidth = initialScale * scale;
+        const newHeight = (userImage.height / userImage.width) * newWidth;
+
+        // Ограничиваем минимальный и максимальный размеры
+        const minWidth = 50;
+        const maxWidth = Math.min(
+          currentTemplate.printableArea.width,
+          currentTemplate.printableArea.height
+        );
+
+        const clampedWidth = Math.max(minWidth, Math.min(maxWidth, newWidth));
+        const clampedHeight =
+          (userImage.height / userImage.width) * clampedWidth;
+
+        const newImage = {
+          ...userImage,
+          width: clampedWidth,
+          height: clampedHeight,
+        };
+
+        setDraggedImage(newImage);
+        drawCanvasWithImage(newImage);
+        e.preventDefault();
+        return;
+      }
+
+      // Обработка перетаскивания/вращения одним пальцем
+      if (e.touches.length === 1 && isDragging) {
+        const touch = e.touches[0];
+
+        if (isRotateMode) {
+          // Режим вращения - перемещение по X влияет на вращение
+          const deltaX = touch.clientX - rotateStartX;
+          const newRotation = (dragStart.x + deltaX) % 360;
+
+          const newDraggedImage = { ...userImage, rotation: newRotation };
+          setDraggedImage(newDraggedImage);
+          drawCanvasWithImage(newDraggedImage);
+        } else {
+          // Режим перемещения
+          const x =
+            (touch.clientX - rect.left) *
+            (currentTemplate.canvasWidth / rect.width);
+          const y =
+            (touch.clientY - rect.top) *
+            (currentTemplate.canvasHeight / rect.height);
+
+          const newX = Math.max(
+            currentTemplate.printableArea.x,
+            Math.min(
+              currentTemplate.printableArea.x +
+                currentTemplate.printableArea.width -
+                userImage.width,
+              x - dragStart.x
+            )
+          );
+
+          const newY = Math.max(
+            currentTemplate.printableArea.y,
+            Math.min(
+              currentTemplate.printableArea.y +
+                currentTemplate.printableArea.height -
+                userImage.height,
+              y - dragStart.y
+            )
+          );
+
+          // Обновляем временное изображение без ререндера компонента
+          const newDraggedImage = { ...userImage, x: newX, y: newY };
+          setDraggedImage(newDraggedImage);
+          drawCanvasWithImage(newDraggedImage);
+        }
+      }
+    },
+    [
+      isDragging,
+      isPinching,
+      initialDistance,
+      initialScale,
+      userImage,
+      dragStart,
+      getDistance,
+      isRotateMode,
+      rotateStartX,
+    ]
+  );
 
   // Кешируем загруженные изображения чтобы избежать повторной загрузки
   const templateImageRef = useRef<HTMLImageElement | null>(null);
@@ -209,6 +399,16 @@ export const SimpleEditor = ({
   // Флаг для предотвращения двойной отрисовки
   const isDrawingRef = useRef(false);
   const animationFrameRef = useRef<number>();
+
+  // Авто-скрытие кнопки вращения через 3 секунды
+  React.useEffect(() => {
+    if (showRotateButton) {
+      const timer = setTimeout(() => {
+        setShowRotateButton(false);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [showRotateButton]);
 
   // Сохраняем template в ref чтобы избежать пересоздания функций
   const templateRef = useRef(template);
@@ -242,103 +442,117 @@ export const SimpleEditor = ({
     }
   }, [userImage?.src]);
 
-  const drawCanvasWithImage = useCallback((imageOverride?: UserImage) => {
-    // Отменяем предыдущий запрос анимации
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
-    }
+  const drawCanvasWithImage = useCallback(
+    (imageOverride?: UserImage) => {
+      // Отменяем предыдущий запрос анимации
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
 
-    // Запускаем отрисовку в следующем кадре
-    animationFrameRef.current = requestAnimationFrame(() => {
-      const canvas = canvasRef.current;
-      if (!canvas || isDrawingRef.current) return;
+      // Запускаем отрисовку в следующем кадре
+      animationFrameRef.current = requestAnimationFrame(() => {
+        const canvas = canvasRef.current;
+        if (!canvas || isDrawingRef.current) return;
 
-      const currentTemplate = templateRef.current;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
+        const currentTemplate = templateRef.current;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
 
-      // Устанавливаем флаг, чтобы предотвратить двойную отрисовку
-      isDrawingRef.current = true;
+        // Устанавливаем флаг, чтобы предотвратить двойную отрисовку
+        isDrawingRef.current = true;
 
-      try {
-        // Очищаем canvas
-        ctx.clearRect(0, 0, currentTemplate.canvasWidth, currentTemplate.canvasHeight);
+        try {
+          // Очищаем canvas
+          ctx.clearRect(
+            0,
+            0,
+            currentTemplate.canvasWidth,
+            currentTemplate.canvasHeight
+          );
 
-        // Рисуем шаблон (если загружен)
-        if (templateImageRef.current) {
-          ctx.drawImage(templateImageRef.current, 0, 0, currentTemplate.canvasWidth, currentTemplate.canvasHeight);
-
-          // Рисуем печатную область
-          if (showPrintArea) {
-            ctx.strokeStyle = '#ddd';
-            ctx.lineWidth = 2;
-            ctx.setLineDash([5, 5]);
-            ctx.strokeRect(
-              currentTemplate.printableArea.x,
-              currentTemplate.printableArea.y,
-              currentTemplate.printableArea.width,
-              currentTemplate.printableArea.height
+          // Рисуем шаблон (если загружен)
+          if (templateImageRef.current) {
+            ctx.drawImage(
+              templateImageRef.current,
+              0,
+              0,
+              currentTemplate.canvasWidth,
+              currentTemplate.canvasHeight
             );
-            ctx.setLineDash([]);
-          }
 
-          // Рисуем изображение пользователя (или override)
-          const currentImage = imageOverride || userImage;
-          if (currentImage) {
-            ctx.save();
-
-            // Применяем трансформации
-            ctx.globalAlpha = currentImage.opacity;
-            ctx.translate(
-              currentImage.x + currentImage.width / 2,
-              currentImage.y + currentImage.height / 2
-            );
-            ctx.rotate((currentImage.rotation * Math.PI) / 180);
-
-            // Используем подходящее изображение
-            const imageToDraw = imageOverride ?
-              (tempDragImageRef.current || userImageRef.current) :
-              userImageRef.current;
-
-            if (imageToDraw) {
-              ctx.drawImage(
-                imageToDraw,
-                -currentImage.width / 2,
-                -currentImage.height / 2,
-                currentImage.width,
-                currentImage.height
+            // Рисуем печатную область
+            if (showPrintArea) {
+              ctx.strokeStyle = "#ddd";
+              ctx.lineWidth = 2;
+              ctx.setLineDash([5, 5]);
+              ctx.strokeRect(
+                currentTemplate.printableArea.x,
+                currentTemplate.printableArea.y,
+                currentTemplate.printableArea.width,
+                currentTemplate.printableArea.height
               );
-            } else if (imageOverride && currentImage.src) {
-              // Если нужно загрузить временное изображение для перетаскивания
-              const tempImg = new Image();
-              tempImg.onload = () => {
-                tempDragImageRef.current = tempImg;
+              ctx.setLineDash([]);
+            }
+
+            // Рисуем изображение пользователя (или override)
+            const currentImage = imageOverride || userImage;
+            if (currentImage) {
+              ctx.save();
+
+              // Применяем трансформации
+              ctx.globalAlpha = currentImage.opacity;
+              ctx.translate(
+                currentImage.x + currentImage.width / 2,
+                currentImage.y + currentImage.height / 2
+              );
+              ctx.rotate((currentImage.rotation * Math.PI) / 180);
+
+              // Используем подходящее изображение
+              const imageToDraw = imageOverride
+                ? tempDragImageRef.current || userImageRef.current
+                : userImageRef.current;
+
+              if (imageToDraw) {
                 ctx.drawImage(
-                  tempImg,
+                  imageToDraw,
                   -currentImage.width / 2,
                   -currentImage.height / 2,
                   currentImage.width,
                   currentImage.height
                 );
-                ctx.restore();
-                isDrawingRef.current = false;
-              };
-              tempImg.src = currentImage.src;
-              return; // Выходим, так как отрисовка произойдет в onload
+              } else if (imageOverride && currentImage.src) {
+                // Если нужно загрузить временное изображение для перетаскивания
+                const tempImg = new Image();
+                tempImg.onload = () => {
+                  tempDragImageRef.current = tempImg;
+                  ctx.drawImage(
+                    tempImg,
+                    -currentImage.width / 2,
+                    -currentImage.height / 2,
+                    currentImage.width,
+                    currentImage.height
+                  );
+                  ctx.restore();
+                  isDrawingRef.current = false;
+                };
+                tempImg.src = currentImage.src;
+                return; // Выходим, так как отрисовка произойдет в onload
+              }
+              ctx.restore();
             }
-            ctx.restore();
           }
+        } finally {
+          isDrawingRef.current = false;
         }
-      } finally {
-        isDrawingRef.current = false;
-      }
-    });
-  }, [userImage, showPrintArea]);
+      });
+    },
+    [userImage, showPrintArea]
+  );
 
   // Рисование на canvas
   const drawCanvas = useCallback(() => {
     drawCanvasWithImage();
-  }, [drawCanvasWithImage]);
+  }, [userImage, showPrintArea]);
 
   // Очистка при unmount
   React.useEffect(() => {
@@ -355,7 +569,7 @@ export const SimpleEditor = ({
     if (isDragging) return;
 
     drawCanvas();
-  }, [template, showPrintArea, isDragging, drawCanvas]);
+  }, [template, showPrintArea, isDragging, userImage, drawCanvas]);
 
   // Обработчики изменений
   const handleSizeChange = (factor: number) => {
@@ -364,7 +578,7 @@ export const SimpleEditor = ({
       const updatedImage = {
         ...currentImage,
         width: currentImage.width * factor,
-        height: currentImage.height * factor
+        height: currentImage.height * factor,
       };
 
       if (isDragging) {
@@ -381,7 +595,7 @@ export const SimpleEditor = ({
     if (currentImage) {
       const updatedImage = {
         ...currentImage,
-        rotation: (currentImage.rotation + 15) % 360
+        rotation: (currentImage.rotation + 15) % 360,
       };
 
       if (isDragging) {
@@ -397,7 +611,7 @@ export const SimpleEditor = ({
     const canvas = canvasRef.current;
     const currentImage = draggedImage || userImage;
     if (canvas && currentImage) {
-      const link = document.createElement('a');
+      const link = document.createElement("a");
       link.download = `merch-${template.name}-${Date.now()}.png`;
       link.href = canvas.toDataURL();
       document.body.appendChild(link);
@@ -417,10 +631,16 @@ export const SimpleEditor = ({
             </IconButton>
             <div>
               <h1 className="text-lg font-semibold">{template.name}</h1>
-              <p className="text-xs text-gray-500">Тяните логотип мышью или пальцем</p>
+              <p className="text-xs text-gray-500">
+                1 палец - двигать, 2 пальца - масштабировать, 2 касания -
+                вращение
+              </p>
             </div>
           </div>
-          <IconButton onClick={handleDownload} className="bg-green-500 hover:bg-green-600">
+          <IconButton
+            onClick={handleDownload}
+            className="bg-green-500 hover:bg-green-600"
+          >
             <Download size={24} className="text-white" />
           </IconButton>
         </div>
@@ -429,21 +649,21 @@ export const SimpleEditor = ({
         <div className="flex items-center justify-center">
           <div className="bg-gray-100 rounded-lg p-1 flex">
             <button
-              onClick={() => onSwitchTemplate('tshirt-front')}
+              onClick={() => onSwitchTemplate("tshirt-front")}
               className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                template.id === 'tshirt-front'
-                  ? 'bg-white text-blue-600 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
+                template.id === "tshirt-front"
+                  ? "bg-white text-blue-600 shadow-sm"
+                  : "text-gray-600 hover:text-gray-900"
               }`}
             >
               Перед
             </button>
             <button
-              onClick={() => onSwitchTemplate('tshirt-back')}
+              onClick={() => onSwitchTemplate("tshirt-back")}
               className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                template.id === 'tshirt-back'
-                  ? 'bg-white text-blue-600 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
+                template.id === "tshirt-back"
+                  ? "bg-white text-blue-600 shadow-sm"
+                  : "text-gray-600 hover:text-gray-900"
               }`}
             >
               Спина
@@ -454,14 +674,18 @@ export const SimpleEditor = ({
 
       {/* Canvas Area */}
       <div className="flex-1 overflow-auto bg-gray-100 p-4">
-        <div className="max-w-sm mx-auto">
+        <div className="max-w-sm mx-auto px-2">
           <div className="relative">
             <canvas
               ref={canvasRef}
               width={template.canvasWidth}
               height={template.canvasHeight}
               className="bg-white rounded-lg shadow-lg mx-auto w-full max-w-full h-auto cursor-move"
-              style={{ maxHeight: '600px', touchAction: 'none' }}
+              style={{
+                maxHeight: "min(600px, 70vh)",
+                touchAction: "none",
+                maxWidth: "100%",
+              }}
               onMouseDown={handleMouseDown}
               onMouseMove={handleMouseMove}
               onMouseUp={handleMouseUp}
@@ -471,15 +695,41 @@ export const SimpleEditor = ({
               onTouchEnd={handleMouseUp}
             />
 
-                      </div>
+            {/* Кнопка быстрого вращения */}
+            {userImage && showRotateButton && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleRotate();
+                }}
+                className="absolute top-2 right-2 md:top-4 md:right-4 bg-purple-600 text-white p-2 md:p-3 rounded-full shadow-lg hover:bg-purple-700 active:scale-95 transition-all duration-150 z-10"
+                aria-label="Вращать логотип"
+              >
+                <RotateCw size={18} />
+              </button>
+            )}
+          </div>
 
           {/* Инструкции */}
           {userImage && (
             <div className="mt-4 bg-blue-50 p-3 rounded-lg text-sm text-blue-700">
               <p className="font-medium mb-1">💡 Как редактировать:</p>
               <ul className="text-xs space-y-1">
-                <li>• Тяните логотип мышью или пальцем для перемещения</li>
-                <li>• Используйте кнопки ниже для изменения размера</li>
+                <li>
+                  • <strong>1 палец:</strong> Перемещение логотипа
+                </li>
+                <li>
+                  • <strong>2 пальца:</strong> Масштабирование
+                  (сведите/раздвиньте пальцы)
+                </li>
+                <li>
+                  • <strong>2 быстрых касания:</strong> Включить режим вращения
+                </li>
+                {isRotateMode && (
+                  <li className="text-purple-700 font-medium">
+                    🔄 <strong>Режим вращения:</strong> Любое перемещение вращает логотип
+                  </li>
+                )}
                 <li>• Печатная область ограничена пунктирной линией</li>
               </ul>
             </div>
@@ -489,7 +739,7 @@ export const SimpleEditor = ({
 
       {/* Controls Panel */}
       <div className="bg-white shadow-lg border-t border-gray-200">
-        <div className="p-4">
+        <div className="p-3 md:p-4">
           {/* Upload Button */}
           {!userImage ? (
             <div className="mb-4">
@@ -535,7 +785,9 @@ export const SimpleEditor = ({
                   className="p-3 bg-purple-100 rounded-lg flex flex-col items-center justify-center active:scale-95 transition-transform"
                 >
                   <RotateCw size={20} className="text-purple-600" />
-                  <span className="text-xs text-purple-600 mt-1">Повернуть</span>
+                  <span className="text-xs text-purple-600 mt-1">
+                    Повернуть
+                  </span>
                 </button>
 
                 <button
@@ -553,11 +805,11 @@ export const SimpleEditor = ({
                   onClick={() => setShowPrintArea(!showPrintArea)}
                   className={`text-sm px-3 py-2 rounded ${
                     showPrintArea
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-white text-gray-700 border border-gray-300'
+                      ? "bg-blue-500 text-white"
+                      : "bg-white text-gray-700 border border-gray-300"
                   }`}
                 >
-                  {showPrintArea ? 'Скрыть область' : 'Показать область'}
+                  {showPrintArea ? "Скрыть область" : "Показать область"}
                 </button>
 
                 {userImage && (
@@ -566,10 +818,17 @@ export const SimpleEditor = ({
                       const currentImage = draggedImage || userImage;
                       const centeredImage = {
                         ...currentImage,
-                        x: template.printableArea.x + (template.printableArea.width - currentImage.width) / 2,
-                        y: template.printableArea.y + (template.printableArea.height - currentImage.height) / 2,
+                        x:
+                          template.printableArea.x +
+                          (template.printableArea.width - currentImage.width) /
+                            2,
+                        y:
+                          template.printableArea.y +
+                          (template.printableArea.height -
+                            currentImage.height) /
+                            2,
                         rotation: 0,
-                        opacity: 1
+                        opacity: 1,
                       };
 
                       if (isDragging) {
@@ -589,9 +848,17 @@ export const SimpleEditor = ({
               {/* Image Info */}
               {userImage && (
                 <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded">
-                  <p>Размер: {Math.round((draggedImage || userImage).width)}×{Math.round((draggedImage || userImage).height)}px</p>
-                  <p>Поворот: {Math.round((draggedImage || userImage).rotation)}°</p>
-                  <p>Прозрачность: {Math.round((draggedImage || userImage).opacity * 100)}%</p>
+                  <p>
+                    Размер: {Math.round((draggedImage || userImage).width)}×
+                    {Math.round((draggedImage || userImage).height)}px
+                  </p>
+                  <p>
+                    Поворот: {Math.round((draggedImage || userImage).rotation)}°
+                  </p>
+                  <p>
+                    Прозрачность:{" "}
+                    {Math.round((draggedImage || userImage).opacity * 100)}%
+                  </p>
                   {draggedImage && (
                     <p className="text-blue-600">🔄 Перемещение...</p>
                   )}
