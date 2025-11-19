@@ -73,10 +73,11 @@ export const SimpleEditor = ({
   // Обработчики мышью
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!userImage || !canvasRef.current) return;
+    const currentTemplate = templateRef.current;
 
     const rect = canvasRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) * (template.canvasWidth / rect.width);
-    const y = (e.clientY - rect.top) * (template.canvasHeight / rect.height);
+    const x = (e.clientX - rect.left) * (currentTemplate.canvasWidth / rect.width);
+    const y = (e.clientY - rect.top) * (currentTemplate.canvasHeight / rect.height);
 
     // Проверяем, кликнули ли на изображение
     if (
@@ -85,30 +86,36 @@ export const SimpleEditor = ({
       y >= userImage.y &&
       y <= userImage.y + userImage.height
     ) {
+      // Предзагружаем изображение для перетаскивания
+      if (!tempDragImageRef.current && userImageRef.current) {
+        tempDragImageRef.current = userImageRef.current;
+      }
+
       setIsDragging(true);
       setDragStart({ x: x - userImage.x, y: y - userImage.y });
     }
-  }, [userImage, template]);
+  }, [userImage]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!isDragging || !userImage || !canvasRef.current) return;
+    const currentTemplate = templateRef.current;
 
     const rect = canvasRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) * (template.canvasWidth / rect.width);
-    const y = (e.clientY - rect.top) * (template.canvasHeight / rect.height);
+    const x = (e.clientX - rect.left) * (currentTemplate.canvasWidth / rect.width);
+    const y = (e.clientY - rect.top) * (currentTemplate.canvasHeight / rect.height);
 
     const newX = Math.max(
-      template.printableArea.x,
+      currentTemplate.printableArea.x,
       Math.min(
-        template.printableArea.x + template.printableArea.width - userImage.width,
+        currentTemplate.printableArea.x + currentTemplate.printableArea.width - userImage.width,
         x - dragStart.x
       )
     );
 
     const newY = Math.max(
-      template.printableArea.y,
+      currentTemplate.printableArea.y,
       Math.min(
-        template.printableArea.y + template.printableArea.height - userImage.height,
+        currentTemplate.printableArea.y + currentTemplate.printableArea.height - userImage.height,
         y - dragStart.y
       )
     );
@@ -119,7 +126,7 @@ export const SimpleEditor = ({
 
     // Рисуем напрямую на canvas без ререндера
     drawCanvasWithImage(newDraggedImage);
-  }, [isDragging, userImage, dragStart, template]);
+  }, [isDragging, userImage, dragStart]);
 
   const handleMouseUp = useCallback(() => {
     setIsDragging(false);
@@ -128,17 +135,20 @@ export const SimpleEditor = ({
     if (draggedImage) {
       setUserImage(draggedImage);
       setDraggedImage(null);
+      // Очищаем временное изображение после завершения перетаскивания
+      tempDragImageRef.current = null;
     }
   }, [draggedImage, setUserImage]);
 
   // Обработчики тач-событий
   const handleTouchStart = useCallback((e: React.TouchEvent<HTMLCanvasElement>) => {
     if (!userImage || !canvasRef.current) return;
+    const currentTemplate = templateRef.current;
 
     const rect = canvasRef.current.getBoundingClientRect();
     const touch = e.touches[0];
-    const x = (touch.clientX - rect.left) * (template.canvasWidth / rect.width);
-    const y = (touch.clientY - rect.top) * (template.canvasHeight / rect.height);
+    const x = (touch.clientX - rect.left) * (currentTemplate.canvasWidth / rect.width);
+    const y = (touch.clientY - rect.top) * (currentTemplate.canvasHeight / rect.height);
 
     if (
       x >= userImage.x &&
@@ -146,32 +156,38 @@ export const SimpleEditor = ({
       y >= userImage.y &&
       y <= userImage.y + userImage.height
     ) {
+      // Предзагружаем изображение для перетаскивания
+      if (!tempDragImageRef.current && userImageRef.current) {
+        tempDragImageRef.current = userImageRef.current;
+      }
+
       setIsDragging(true);
       setDragStart({ x: x - userImage.x, y: y - userImage.y });
       e.preventDefault();
     }
-  }, [userImage, template]);
+  }, [userImage]);
 
   const handleTouchMove = useCallback((e: React.TouchEvent<HTMLCanvasElement>) => {
     if (!isDragging || !userImage || !canvasRef.current) return;
+    const currentTemplate = templateRef.current;
 
     const rect = canvasRef.current.getBoundingClientRect();
     const touch = e.touches[0];
-    const x = (touch.clientX - rect.left) * (template.canvasWidth / rect.width);
-    const y = (touch.clientY - rect.top) * (template.canvasHeight / rect.height);
+    const x = (touch.clientX - rect.left) * (currentTemplate.canvasWidth / rect.width);
+    const y = (touch.clientY - rect.top) * (currentTemplate.canvasHeight / rect.height);
 
     const newX = Math.max(
-      template.printableArea.x,
+      currentTemplate.printableArea.x,
       Math.min(
-        template.printableArea.x + template.printableArea.width - userImage.width,
+        currentTemplate.printableArea.x + currentTemplate.printableArea.width - userImage.width,
         x - dragStart.x
       )
     );
 
     const newY = Math.max(
-      template.printableArea.y,
+      currentTemplate.printableArea.y,
       Math.min(
-        template.printableArea.y + template.printableArea.height - userImage.height,
+        currentTemplate.printableArea.y + currentTemplate.printableArea.height - userImage.height,
         y - dragStart.y
       )
     );
@@ -183,71 +199,155 @@ export const SimpleEditor = ({
     // Рисуем напрямую на canvas без ререндера
     drawCanvasWithImage(newDraggedImage);
     e.preventDefault();
-  }, [isDragging, userImage, dragStart, template]);
+  }, [isDragging, userImage, dragStart]);
+
+  // Кешируем загруженные изображения чтобы избежать повторной загрузки
+  const templateImageRef = useRef<HTMLImageElement | null>(null);
+  const userImageRef = useRef<HTMLImageElement | null>(null);
+  const tempDragImageRef = useRef<HTMLImageElement | null>(null);
+
+  // Флаг для предотвращения двойной отрисовки
+  const isDrawingRef = useRef(false);
+  const animationFrameRef = useRef<number>();
+
+  // Сохраняем template в ref чтобы избежать пересоздания функций
+  const templateRef = useRef(template);
+  templateRef.current = template;
+
+  // Загружаем шаблон один раз и очищаем при смене
+  React.useEffect(() => {
+    // Очищаем предыдущее изображение шаблона
+    templateImageRef.current = null;
+
+    const img = new Image();
+    img.onload = () => {
+      templateImageRef.current = img;
+      drawCanvas();
+    };
+    img.src = template.imageUrl;
+  }, [template.imageUrl]);
+
+  // Загружаем изображение пользователя при изменении
+  React.useEffect(() => {
+    if (userImage && userImage.src !== userImageRef.current?.src) {
+      const img = new Image();
+      img.onload = () => {
+        userImageRef.current = img;
+        drawCanvas();
+      };
+      img.src = userImage.src;
+    } else if (!userImage) {
+      userImageRef.current = null;
+      drawCanvas();
+    }
+  }, [userImage?.src]);
 
   const drawCanvasWithImage = useCallback((imageOverride?: UserImage) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    // Отменяем предыдущий запрос анимации
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+    }
 
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    // Запускаем отрисовку в следующем кадре
+    animationFrameRef.current = requestAnimationFrame(() => {
+      const canvas = canvasRef.current;
+      if (!canvas || isDrawingRef.current) return;
 
-    // Очищаем canvas
-    ctx.clearRect(0, 0, template.canvasWidth, template.canvasHeight);
+      const currentTemplate = templateRef.current;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
 
-    // Рисуем шаблон
-    const templateImg = new Image();
-    templateImg.onload = () => {
-      ctx.drawImage(templateImg, 0, 0, template.canvasWidth, template.canvasHeight);
+      // Устанавливаем флаг, чтобы предотвратить двойную отрисовку
+      isDrawingRef.current = true;
 
-      // Рисуем печатную область
-      if (showPrintArea) {
-        ctx.strokeStyle = '#ddd';
-        ctx.lineWidth = 2;
-        ctx.setLineDash([5, 5]);
-        ctx.strokeRect(
-          template.printableArea.x,
-          template.printableArea.y,
-          template.printableArea.width,
-          template.printableArea.height
-        );
-        ctx.setLineDash([]);
+      try {
+        // Очищаем canvas
+        ctx.clearRect(0, 0, currentTemplate.canvasWidth, currentTemplate.canvasHeight);
+
+        // Рисуем шаблон (если загружен)
+        if (templateImageRef.current) {
+          ctx.drawImage(templateImageRef.current, 0, 0, currentTemplate.canvasWidth, currentTemplate.canvasHeight);
+
+          // Рисуем печатную область
+          if (showPrintArea) {
+            ctx.strokeStyle = '#ddd';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 5]);
+            ctx.strokeRect(
+              currentTemplate.printableArea.x,
+              currentTemplate.printableArea.y,
+              currentTemplate.printableArea.width,
+              currentTemplate.printableArea.height
+            );
+            ctx.setLineDash([]);
+          }
+
+          // Рисуем изображение пользователя (или override)
+          const currentImage = imageOverride || userImage;
+          if (currentImage) {
+            ctx.save();
+
+            // Применяем трансформации
+            ctx.globalAlpha = currentImage.opacity;
+            ctx.translate(
+              currentImage.x + currentImage.width / 2,
+              currentImage.y + currentImage.height / 2
+            );
+            ctx.rotate((currentImage.rotation * Math.PI) / 180);
+
+            // Используем подходящее изображение
+            const imageToDraw = imageOverride ?
+              (tempDragImageRef.current || userImageRef.current) :
+              userImageRef.current;
+
+            if (imageToDraw) {
+              ctx.drawImage(
+                imageToDraw,
+                -currentImage.width / 2,
+                -currentImage.height / 2,
+                currentImage.width,
+                currentImage.height
+              );
+            } else if (imageOverride && currentImage.src) {
+              // Если нужно загрузить временное изображение для перетаскивания
+              const tempImg = new Image();
+              tempImg.onload = () => {
+                tempDragImageRef.current = tempImg;
+                ctx.drawImage(
+                  tempImg,
+                  -currentImage.width / 2,
+                  -currentImage.height / 2,
+                  currentImage.width,
+                  currentImage.height
+                );
+                ctx.restore();
+                isDrawingRef.current = false;
+              };
+              tempImg.src = currentImage.src;
+              return; // Выходим, так как отрисовка произойдет в onload
+            }
+            ctx.restore();
+          }
+        }
+      } finally {
+        isDrawingRef.current = false;
       }
-
-      // Рисуем изображение пользователя (или override)
-      const currentImage = imageOverride || userImage;
-      if (currentImage) {
-        ctx.save();
-
-        // Применяем трансформации
-        ctx.globalAlpha = currentImage.opacity;
-        ctx.translate(
-          currentImage.x + currentImage.width / 2,
-          currentImage.y + currentImage.height / 2
-        );
-        ctx.rotate((currentImage.rotation * Math.PI) / 180);
-
-        const userImg = new Image();
-        userImg.onload = () => {
-          ctx.drawImage(
-            userImg,
-            -currentImage.width / 2,
-            -currentImage.height / 2,
-            currentImage.width,
-            currentImage.height
-          );
-          ctx.restore();
-        };
-        userImg.src = currentImage.src;
-      }
-    };
-    templateImg.src = template.imageUrl;
-  }, [template, userImage, showPrintArea]);
+    });
+  }, [userImage, showPrintArea]);
 
   // Рисование на canvas
   const drawCanvas = useCallback(() => {
     drawCanvasWithImage();
   }, [drawCanvasWithImage]);
+
+  // Очистка при unmount
+  React.useEffect(() => {
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, []);
 
   // Обновляем canvas при изменениях (только не во время перетаскивания)
   React.useEffect(() => {
@@ -255,7 +355,7 @@ export const SimpleEditor = ({
     if (isDragging) return;
 
     drawCanvas();
-  }, [drawCanvas, isDragging]);
+  }, [template, showPrintArea, isDragging, drawCanvas]);
 
   // Обработчики изменений
   const handleSizeChange = (factor: number) => {
