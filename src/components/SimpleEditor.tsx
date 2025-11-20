@@ -37,10 +37,8 @@ export const SimpleEditor = ({
   const [initialDistance, setInitialDistance] = useState<number | null>(null);
   const [initialScale, setInitialScale] = useState<number | null>(null);
   const [isPinching, setIsPinching] = useState(false);
-  const [showRotateButton, setShowRotateButton] = useState(false);
+  const [showRotateSlider, setShowRotateSlider] = useState(false); // Показать слайдер вращения
   const [lastTapTime, setLastTapTime] = useState(0);
-  const [isRotateMode, setIsRotateMode] = useState(false); // Режим вращения
-  const [rotateStartX, setRotateStartX] = useState(0); // Начальная позиция для вращения
 
   // Обработчик загрузки изображения
   const handleImageUpload = useCallback(
@@ -202,13 +200,12 @@ export const SimpleEditor = ({
     (e: React.TouchEvent<HTMLCanvasElement>) => {
       const currentTime = Date.now();
       if (currentTime - lastTapTime < 300) {
-        // Двойное касание - переключаем режим вращения
-        setIsRotateMode(!isRotateMode);
-        setShowRotateButton(!isRotateMode); // Показываем кнопку когда входим в режим
+        // Двойное касание - показываем слайдер вращения
+        setShowRotateSlider(!showRotateSlider);
       }
       setLastTapTime(currentTime);
     },
-    [lastTapTime, isRotateMode, showRotateButton]
+    [lastTapTime, showRotateSlider]
   );
 
   // Обработчики тач-событий
@@ -272,20 +269,13 @@ export const SimpleEditor = ({
           }
 
           setIsDragging(true);
-
-          if (isRotateMode) {
-            // В режиме вращения сохраняем начальную позицию X
-            setRotateStartX(touch.clientX);
-            setDragStart({ x: userImage.rotation, y: 0 });
-          } else {
-            // В режиме перемещения сохраняем смещение
-            setDragStart({ x: x - userImage.x, y: y - userImage.y });
-          }
+          // Сохраняем смещение для перемещения
+          setDragStart({ x: x - userImage.x, y: y - userImage.y });
           e.preventDefault();
         }
       }
     },
-    [userImage, handleQuickTap, isRotateMode]
+    [userImage, handleQuickTap]
   );
 
   const handleTouchMove = useCallback(
@@ -330,52 +320,42 @@ export const SimpleEditor = ({
         return;
       }
 
-      // Обработка перетаскивания/вращения одним пальцем
+      // Обработка перетаскивания одним пальцем
       if (e.touches.length === 1 && isDragging) {
         const touch = e.touches[0];
 
-        if (isRotateMode) {
-          // Режим вращения - перемещение по X влияет на вращение
-          const deltaX = touch.clientX - rotateStartX;
-          const newRotation = (dragStart.x + deltaX) % 360;
+        // Режим перемещения
+        const x =
+          (touch.clientX - rect.left) *
+          (currentTemplate.canvasWidth / rect.width);
+        const y =
+          (touch.clientY - rect.top) *
+          (currentTemplate.canvasHeight / rect.height);
 
-          const newDraggedImage = { ...userImage, rotation: newRotation };
-          setDraggedImage(newDraggedImage);
-          drawCanvasWithImage(newDraggedImage);
-        } else {
-          // Режим перемещения
-          const x =
-            (touch.clientX - rect.left) *
-            (currentTemplate.canvasWidth / rect.width);
-          const y =
-            (touch.clientY - rect.top) *
-            (currentTemplate.canvasHeight / rect.height);
+        const newX = Math.max(
+          currentTemplate.printableArea.x,
+          Math.min(
+            currentTemplate.printableArea.x +
+              currentTemplate.printableArea.width -
+              userImage.width,
+            x - dragStart.x
+          )
+        );
 
-          const newX = Math.max(
-            currentTemplate.printableArea.x,
-            Math.min(
-              currentTemplate.printableArea.x +
-                currentTemplate.printableArea.width -
-                userImage.width,
-              x - dragStart.x
-            )
-          );
+        const newY = Math.max(
+          currentTemplate.printableArea.y,
+          Math.min(
+            currentTemplate.printableArea.y +
+              currentTemplate.printableArea.height -
+              userImage.height,
+            y - dragStart.y
+          )
+        );
 
-          const newY = Math.max(
-            currentTemplate.printableArea.y,
-            Math.min(
-              currentTemplate.printableArea.y +
-                currentTemplate.printableArea.height -
-                userImage.height,
-              y - dragStart.y
-            )
-          );
-
-          // Обновляем временное изображение без ререндера компонента
-          const newDraggedImage = { ...userImage, x: newX, y: newY };
-          setDraggedImage(newDraggedImage);
-          drawCanvasWithImage(newDraggedImage);
-        }
+        // Обновляем временное изображение без ререндера компонента
+        const newDraggedImage = { ...userImage, x: newX, y: newY };
+        setDraggedImage(newDraggedImage);
+        drawCanvasWithImage(newDraggedImage);
       }
     },
     [
@@ -386,8 +366,6 @@ export const SimpleEditor = ({
       userImage,
       dragStart,
       getDistance,
-      isRotateMode,
-      rotateStartX,
     ]
   );
 
@@ -399,16 +377,6 @@ export const SimpleEditor = ({
   // Флаг для предотвращения двойной отрисовки
   const isDrawingRef = useRef(false);
   const animationFrameRef = useRef<number>();
-
-  // Авто-скрытие кнопки вращения через 3 секунды
-  React.useEffect(() => {
-    if (showRotateButton) {
-      const timer = setTimeout(() => {
-        setShowRotateButton(false);
-      }, 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [showRotateButton]);
 
   // Сохраняем template в ref чтобы избежать пересоздания функций
   const templateRef = useRef(template);
@@ -590,12 +558,12 @@ export const SimpleEditor = ({
     }
   };
 
-  const handleRotate = () => {
+  const handleRotate = (rotation: number) => {
     const currentImage = draggedImage || userImage;
     if (currentImage) {
       const updatedImage = {
         ...currentImage,
-        rotation: (currentImage.rotation + 15) % 360,
+        rotation: rotation,
       };
 
       if (isDragging) {
@@ -604,6 +572,13 @@ export const SimpleEditor = ({
       } else {
         setUserImage(updatedImage);
       }
+    }
+  };
+
+  const handleQuickRotate = () => {
+    const currentImage = draggedImage || userImage;
+    if (currentImage) {
+      handleRotate((currentImage.rotation + 15) % 360);
     }
   };
 
@@ -631,18 +606,18 @@ export const SimpleEditor = ({
             </IconButton>
             <div>
               <h1 className="text-lg font-semibold">{template.name}</h1>
-              <p className="text-xs text-gray-500">
-                1 палец - двигать, 2 пальца - масштабировать, 2 касания -
-                вращение
-              </p>
             </div>
           </div>
-          <IconButton
+          <button
             onClick={handleDownload}
-            className="bg-green-500 hover:bg-green-600"
+            className="p-4 rounded-full bg-white shadow-lg active:scale-95
+        transition-all duration-150 hover:shadow-xl
+        disabled:opacity-50 disabled:cursor-not-allowed
+             text-black px-3 py-2space-x-2
+ min-w-[56px] min-h-[56px] flex items-center justify-center"
           >
-            <Download size={24} className="text-white" />
-          </IconButton>
+            <Download size={24} />
+          </button>
         </div>
 
         {/* Переключатель передняя/задняя сторона */}
@@ -695,18 +670,130 @@ export const SimpleEditor = ({
               onTouchEnd={handleMouseUp}
             />
 
-            {/* Кнопка быстрого вращения */}
-            {userImage && showRotateButton && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleRotate();
-                }}
-                className="absolute top-2 right-2 md:top-4 md:right-4 bg-purple-600 text-white p-2 md:p-3 rounded-full shadow-lg hover:bg-purple-700 active:scale-95 transition-all duration-150 z-10"
-                aria-label="Вращать логотип"
-              >
-                <RotateCw size={18} />
-              </button>
+            {/* Слайдер вращения */}
+            {userImage && showRotateSlider && (
+              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-black/60 backdrop-blur-sm p-6">
+                <div className="max-w-md mx-auto">
+                  {/* Заголовок с кнопкой закрытия */}
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center space-x-2">
+                      <div className="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center">
+                        <RotateCw size={16} className="text-white" />
+                      </div>
+                      <span className="text-white font-semibold text-base">
+                        Вращение изображения
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setShowRotateSlider(false)}
+                      className="w-8 h-8 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center transition-all duration-200 text-white"
+                      aria-label="Закрыть"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  {/* Большой дисплей текущего угла */}
+                  <div className="text-center mb-4">
+                    <div className="inline-flex items-center justify-center w-20 h-20 bg-white/10 rounded-full backdrop-blur-sm border-2 border-white/20">
+                      <span className="text-white font-bold text-xl">
+                        {Math.round((draggedImage || userImage).rotation)}°
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Основной слайдер */}
+                  <div className="mb-4">
+                    <div className="relative">
+                      {/* Декоративная линия под слайдером */}
+                      <div className="absolute top-1/2 left-0 right-0 h-1 bg-white/20 rounded-full -translate-y-1/2"></div>
+
+                      <div className="flex items-center space-x-3 relative z-10">
+                        <span className="text-white/70 text-xs font-medium min-w-[35px] text-right">-180°</span>
+
+                        <div className="flex-1 relative">
+                          <input
+                            type="range"
+                            min="-180"
+                            max="180"
+                            value={(draggedImage || userImage).rotation}
+                            onChange={(e) => handleRotate(Number(e.target.value))}
+                            className="w-full h-3 bg-transparent appearance-none cursor-pointer slider-rotate"
+                            style={{
+                              background: `linear-gradient(to right,
+                                #ec4899 0%,
+                                #8b5cf6 ${
+                                  ((Number((draggedImage || userImage).rotation) + 180) / 360) * 100
+                                }%,
+                                rgba(255,255,255,0.2) ${
+                                  ((Number((draggedImage || userImage).rotation) + 180) / 360) * 100
+                                }%,
+                                rgba(255,255,255,0.2) 100%)`
+                            }}
+                          />
+
+                          {/* Ползунок */}
+                          <div
+                            className="absolute top-1/2 w-6 h-6 bg-white rounded-full shadow-lg border-2 border-purple-500 -translate-y-1/2 pointer-events-none flex items-center justify-center"
+                            style={{
+                              left: `${((Number((draggedImage || userImage).rotation) + 180) / 360) * 100}%`,
+                              transform: 'translate(-50%, -50%)'
+                            }}
+                          >
+                            <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
+                          </div>
+                        </div>
+
+                        <span className="text-white/70 text-xs font-medium min-w-[35px]">+180°</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Кнопки быстрой настройки */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex space-x-2">
+                      {[-90, -45, 0, 45, 90].map((angle) => (
+                        <button
+                          key={angle}
+                          onClick={() => handleRotate(angle)}
+                          className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-200 ${
+                            Math.abs((draggedImage || userImage).rotation - angle) < 1
+                              ? 'bg-purple-500 text-white'
+                              : 'bg-white/10 text-white/70 hover:bg-white/20'
+                          }`}
+                        >
+                          {angle === 0 ? '0°' : `${angle}°`}
+                        </button>
+                      ))}
+                    </div>
+
+                    <button
+                      onClick={() => handleRotate(0)}
+                      className="px-4 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs font-medium rounded-lg transition-all duration-200"
+                    >
+                      Сброс
+                    </button>
+                  </div>
+                </div>
+
+                {/* Стили для слайдера */}
+                <style jsx>{`
+                  .slider-rotate::-webkit-slider-thumb {
+                    appearance: none;
+                    width: 0;
+                    height: 0;
+                    opacity: 0;
+                  }
+                  .slider-rotate::-moz-range-thumb {
+                    appearance: none;
+                    width: 0;
+                    height: 0;
+                    opacity: 0;
+                  }
+                `}</style>
+              </div>
             )}
           </div>
 
@@ -723,11 +810,13 @@ export const SimpleEditor = ({
                   (сведите/раздвиньте пальцы)
                 </li>
                 <li>
-                  • <strong>2 быстрых касания:</strong> Включить режим вращения
+                  • <strong>2 быстрых касания:</strong> Показать слайдер
+                  вращения
                 </li>
-                {isRotateMode && (
+                {showRotateSlider && (
                   <li className="text-purple-700 font-medium">
-                    🔄 <strong>Режим вращения:</strong> Любое перемещение вращает логотип
+                    🔄 <strong>Слайдер вращения:</strong> Регулируйте угол
+                    поворота
                   </li>
                 )}
                 <li>• Печатная область ограничена пунктирной линией</li>
@@ -781,7 +870,7 @@ export const SimpleEditor = ({
                 </button>
 
                 <button
-                  onClick={() => handleRotate()}
+                  onClick={() => handleQuickRotate()}
                   className="p-3 bg-purple-100 rounded-lg flex flex-col items-center justify-center active:scale-95 transition-transform"
                 >
                   <RotateCw size={20} className="text-purple-600" />

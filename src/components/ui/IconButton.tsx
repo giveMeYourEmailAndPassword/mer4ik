@@ -1,4 +1,4 @@
-import React from 'react';
+import React from "react";
 
 interface IconButtonProps {
   onClick: () => void;
@@ -10,8 +10,8 @@ interface IconButtonProps {
 export const IconButton: React.FC<IconButtonProps> = ({
   onClick,
   children,
-  className = '',
-  disabled = false
+  className = "",
+  disabled = false,
 }) => {
   return (
     <button

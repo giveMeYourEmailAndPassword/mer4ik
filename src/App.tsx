@@ -12,10 +12,10 @@ const templates: MerchTemplate[] = [
     canvasWidth: 400,
     canvasHeight: 550,
     printableArea: {
-      x: 120,
+      x: 100,
       y: 140,
-      width: 160,
-      height: 200,
+      width: 200,
+      height: 300,
     },
   },
   {
@@ -25,10 +25,10 @@ const templates: MerchTemplate[] = [
     canvasWidth: 400,
     canvasHeight: 550,
     printableArea: {
-      x: 120,
+      x: 100,
       y: 140,
-      width: 160,
-      height: 200,
+      width: 200,
+      height: 300,
     },
   },
 ];
@@ -49,7 +49,7 @@ function App() {
   };
 
   const switchTemplate = (templateId: string) => {
-    const newTemplate = templates.find(t => t.id === templateId);
+    const newTemplate = templates.find((t) => t.id === templateId);
     if (newTemplate) {
       setCurrentTemplate(newTemplate);
     }
