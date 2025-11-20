@@ -179,7 +179,7 @@ export const SimpleEditor = ({
   }, [draggedImage, setUserImage]);
 
   // Функция для расчета расстояния между двумя точками
-  const getDistance = (touch1: Touch, touch2: Touch): number => {
+  const getDistance = (touch1: React.Touch, touch2: React.Touch): number => {
     const dx = touch1.clientX - touch2.clientX;
     const dy = touch1.clientY - touch2.clientY;
     return Math.sqrt(dx * dx + dy * dy);
@@ -672,127 +672,92 @@ export const SimpleEditor = ({
 
             {/* Слайдер вращения */}
             {userImage && showRotateSlider && (
-              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-black/60 backdrop-blur-sm p-6">
-                <div className="max-w-md mx-auto">
+              <div className="absolute bottom-0 left-0 right-0 bg-white/95 backdrop-blur-sm border-t border-gray-200 shadow-lg p-4">
+                <div className="max-w-sm mx-auto">
                   {/* Заголовок с кнопкой закрытия */}
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center space-x-2">
-                      <div className="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center">
-                        <RotateCw size={16} className="text-white" />
-                      </div>
-                      <span className="text-white font-semibold text-base">
-                        Вращение изображения
-                      </span>
-                    </div>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-gray-700 font-medium text-sm">
+                      Вращение
+                    </span>
                     <button
                       onClick={() => setShowRotateSlider(false)}
-                      className="w-8 h-8 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center transition-all duration-200 text-white"
+                      className="text-gray-400 hover:text-gray-600 transition-colors"
                       aria-label="Закрыть"
                     >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M6 18L18 6M6 6l12 12"
+                        />
                       </svg>
                     </button>
                   </div>
 
-                  {/* Большой дисплей текущего угла */}
-                  <div className="text-center mb-4">
-                    <div className="inline-flex items-center justify-center w-20 h-20 bg-white/10 rounded-full backdrop-blur-sm border-2 border-white/20">
-                      <span className="text-white font-bold text-xl">
+                  {/* Текущий угол и слайдер */}
+                  <div className="mb-3">
+                    <div className="flex items-center justify-center mb-2">
+                      <div className="text-lg font-semibold text-blue-600">
                         {Math.round((draggedImage || userImage).rotation)}°
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xs text-gray-500 min-w-[30px]">
+                        -180°
+                      </span>
+                      <input
+                        type="range"
+                        min="-180"
+                        max="180"
+                        value={(draggedImage || userImage).rotation}
+                        onChange={(e) => handleRotate(Number(e.target.value))}
+                        className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                        style={{
+                          background: `linear-gradient(to right, #2563eb 0%, #2563eb ${
+                            ((Number((draggedImage || userImage).rotation) +
+                              180) /
+                              360) *
+                            100
+                          }%, #e5e7eb ${
+                            ((Number((draggedImage || userImage).rotation) +
+                              180) /
+                              360) *
+                            100
+                          }%, #e5e7eb 100%)`,
+                        }}
+                      />
+                      <span className="text-xs text-gray-500 min-w-[30px]">
+                        +180°
                       </span>
                     </div>
                   </div>
 
-                  {/* Основной слайдер */}
-                  <div className="mb-4">
-                    <div className="relative">
-                      {/* Декоративная линия под слайдером */}
-                      <div className="absolute top-1/2 left-0 right-0 h-1 bg-white/20 rounded-full -translate-y-1/2"></div>
-
-                      <div className="flex items-center space-x-3 relative z-10">
-                        <span className="text-white/70 text-xs font-medium min-w-[35px] text-right">-180°</span>
-
-                        <div className="flex-1 relative">
-                          <input
-                            type="range"
-                            min="-180"
-                            max="180"
-                            value={(draggedImage || userImage).rotation}
-                            onChange={(e) => handleRotate(Number(e.target.value))}
-                            className="w-full h-3 bg-transparent appearance-none cursor-pointer slider-rotate"
-                            style={{
-                              background: `linear-gradient(to right,
-                                #ec4899 0%,
-                                #8b5cf6 ${
-                                  ((Number((draggedImage || userImage).rotation) + 180) / 360) * 100
-                                }%,
-                                rgba(255,255,255,0.2) ${
-                                  ((Number((draggedImage || userImage).rotation) + 180) / 360) * 100
-                                }%,
-                                rgba(255,255,255,0.2) 100%)`
-                            }}
-                          />
-
-                          {/* Ползунок */}
-                          <div
-                            className="absolute top-1/2 w-6 h-6 bg-white rounded-full shadow-lg border-2 border-purple-500 -translate-y-1/2 pointer-events-none flex items-center justify-center"
-                            style={{
-                              left: `${((Number((draggedImage || userImage).rotation) + 180) / 360) * 100}%`,
-                              transform: 'translate(-50%, -50%)'
-                            }}
-                          >
-                            <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
-                          </div>
-                        </div>
-
-                        <span className="text-white/70 text-xs font-medium min-w-[35px]">+180°</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Кнопки быстрой настройки */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex space-x-2">
-                      {[-90, -45, 0, 45, 90].map((angle) => (
-                        <button
-                          key={angle}
-                          onClick={() => handleRotate(angle)}
-                          className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-200 ${
-                            Math.abs((draggedImage || userImage).rotation - angle) < 1
-                              ? 'bg-purple-500 text-white'
-                              : 'bg-white/10 text-white/70 hover:bg-white/20'
-                          }`}
-                        >
-                          {angle === 0 ? '0°' : `${angle}°`}
-                        </button>
-                      ))}
-                    </div>
-
-                    <button
-                      onClick={() => handleRotate(0)}
-                      className="px-4 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs font-medium rounded-lg transition-all duration-200"
-                    >
-                      Сброс
-                    </button>
+                  {/* Быстрые кнопки */}
+                  <div className="flex items-center justify-center space-x-1">
+                    {[-45, 0, 45].map((angle) => (
+                      <button
+                        key={angle}
+                        onClick={() => handleRotate(angle)}
+                        className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                          Math.abs(
+                            (draggedImage || userImage).rotation - angle
+                          ) < 1
+                            ? "bg-purple-600 text-white"
+                            : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                        }`}
+                      >
+                        {angle === 0 ? "Сброс" : `${angle}°`}
+                      </button>
+                    ))}
                   </div>
                 </div>
-
-                {/* Стили для слайдера */}
-                <style jsx>{`
-                  .slider-rotate::-webkit-slider-thumb {
-                    appearance: none;
-                    width: 0;
-                    height: 0;
-                    opacity: 0;
-                  }
-                  .slider-rotate::-moz-range-thumb {
-                    appearance: none;
-                    width: 0;
-                    height: 0;
-                    opacity: 0;
-                  }
-                `}</style>
               </div>
             )}
           </div>
