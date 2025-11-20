@@ -1,11 +1,18 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
-import { Stage, Layer, Image as KonvaImage, Transformer, Rect } from 'react-konva';
-import type { MerchTemplate, UserImage } from '../types';
-import { ImageControls } from './ImageControls';
-import { IconButton } from './ui/IconButton';
-import { useTouchGestures } from '../hooks/useTouchGestures';
-import { useImageExport } from '../hooks/useImageExport';
-import { ArrowLeft, Download, Upload } from 'lucide-react';
+import { useState, useRef, useCallback, useEffect } from "react";
+import {
+  Stage,
+  Layer,
+  Image as KonvaImage,
+  Transformer,
+  Rect,
+} from "react-konva";
+import Konva from "konva";
+import type { MerchTemplate, UserImage } from "../types";
+import { ImageControls } from "./ImageControls";
+import { IconButton } from "./ui/IconButton";
+import { useTouchGestures } from "../hooks/useTouchGestures";
+import { useImageExport } from "../hooks/useImageExport";
+import { ArrowLeft, Download, Upload } from "lucide-react";
 
 interface MerchEditorProps {
   template: MerchTemplate;
@@ -14,7 +21,7 @@ interface MerchEditorProps {
 
 export const MerchEditor: React.FC<MerchEditorProps> = ({
   template,
-  onBack
+  onBack,
 }) => {
   const [userImage, setUserImage] = useState<UserImage | null>(null);
   const [selectedNode, setSelectedNode] = useState<any>(null);
@@ -26,11 +33,13 @@ export const MerchEditor: React.FC<MerchEditorProps> = ({
   const { exportAndDownload } = useImageExport();
 
   // Обработчик загрузки изображения
-  const handleImageUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
+  const handleImageUpload = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (file) {
+        // Создаем URL для файла вместо конвертации в base64
+        const imageUrl = URL.createObjectURL(file);
+
         const img = new Image();
         img.onload = () => {
           // Масштабируем изображение под печатную область
@@ -52,49 +61,67 @@ export const MerchEditor: React.FC<MerchEditorProps> = ({
 
           const newUserImage: UserImage = {
             id: Date.now().toString(),
-            src: e.target?.result as string,
-            x: template.printableArea.x + (template.printableArea.width - width) / 2,
-            y: template.printableArea.y + (template.printableArea.height - height) / 2,
+            src: imageUrl,
+            x:
+              template.printableArea.x +
+              (template.printableArea.width - width) / 2,
+            y:
+              template.printableArea.y +
+              (template.printableArea.height - height) / 2,
             width,
             height,
             rotation: 0,
-            opacity: 1
+            opacity: 1,
           };
 
           setUserImage(newUserImage);
           imageRef.current = img;
         };
-        img.src = e.target?.result as string;
-      };
-      reader.readAsDataURL(file);
-    }
-  }, [template]);
+        img.src = imageUrl;
+      }
+    },
+    [template]
+  );
 
   // Обработчики изменений изображения
-  const handleImageChange = useCallback((updates: Partial<UserImage>) => {
-    if (userImage) {
-      setUserImage({ ...userImage, ...updates });
+  const handleImageChange = useCallback(
+    (updates: Partial<UserImage>) => {
+      if (userImage) {
+        setUserImage({ ...userImage, ...updates });
+      }
+    },
+    [userImage]
+  );
+
+  // Функция для загрузки нового изображения с очисткой старого
+  const handleUploadNew = useCallback(() => {
+    if (userImage?.src) {
+      URL.revokeObjectURL(userImage.src);
     }
+    fileInputRef.current?.click();
   }, [userImage]);
 
   // Сохранение изображения с расширенными опциями
-  const handleDownload = useCallback(async (format: 'png' | 'jpeg' = 'png') => {
-    if (stageRef.current && userImage) {
-      try {
-        await exportAndDownload(stageRef.current, template, userImage, {
-          format,
-          quality: format === 'jpeg' ? 0.9 : 1,
-          pixelRatio: 2,
-          backgroundColor: format === 'jpeg' ? '#ffffff' : 'transparent'
-        });
-      } catch (err) {
-        console.error('Download failed:', err);
-        alert('Не удалось сохранить изображение. Попробуйте еще раз.');
+  const handleDownload = useCallback(
+    async (format: "png" | "jpeg" = "png") => {
+      if (stageRef.current && userImage) {
+        try {
+          await exportAndDownload(stageRef.current, template, userImage, {
+            format,
+            quality: format === "jpeg" ? 0.9 : 1,
+            pixelRatio: 4,
+            backgroundColor: format === "jpeg" ? "#ffffff" : "transparent",
+          });
+        } catch (err) {
+          console.error("Download failed:", err);
+          alert("Не удалось сохранить изображение. Попробуйте еще раз.");
+        }
+      } else {
+        alert("Сначала загрузите изображение!");
       }
-    } else {
-      alert('Сначала загрузите изображение!');
-    }
-  }, [template, userImage, exportAndDownload]);
+    },
+    [template, userImage, exportAndDownload]
+  );
 
   // Отслеживание выделения элемента
   const handleStageClick = useCallback(() => {
@@ -103,13 +130,22 @@ export const MerchEditor: React.FC<MerchEditorProps> = ({
 
   // Проверка, является ли устройство тач-устройством
   useEffect(() => {
-    setIsTouchDevice('ontouchstart' in window || navigator.maxTouchPoints > 0);
+    setIsTouchDevice("ontouchstart" in window || navigator.maxTouchPoints > 0);
   }, []);
+
+  // Очистка URL объектов при размонтировании
+  useEffect(() => {
+    return () => {
+      if (userImage?.src) {
+        URL.revokeObjectURL(userImage.src);
+      }
+    };
+  }, [userImage]);
 
   // Тач-жесты для mobile
   useTouchGestures(stageContainerRef, {
     onPinch: (scale) => {
-      if (!userImage || !stageRef.current) return;
+      if (!userImage || !stageRef.current || !imageRef.current) return;
 
       const stage = stageRef.current;
       const pointerPos = stage.getPointerPosition();
@@ -117,34 +153,60 @@ export const MerchEditor: React.FC<MerchEditorProps> = ({
       if (pointerPos) {
         const newWidth = userImage.width * scale;
         const newHeight = userImage.height * scale;
+        const clampedWidth = Math.max(20, Math.min(300, newWidth));
+        const clampedHeight = Math.max(20, Math.min(300, newHeight));
 
-        setUserImage(prev => prev ? {
-          ...prev,
-          width: Math.max(20, Math.min(300, newWidth)),
-          height: Math.max(20, Math.min(300, newHeight))
-        } : null);
+        setUserImage((prev) =>
+          prev
+            ? {
+                ...prev,
+                width: clampedWidth,
+                height: clampedHeight,
+              }
+            : null
+        );
       }
     },
     onRotate: (rotation) => {
       if (!userImage) return;
 
-      setUserImage(prev => prev ? {
-        ...prev,
-        rotation: (prev.rotation + rotation) % 360
-      } : null);
+      setUserImage((prev) =>
+        prev
+          ? {
+              ...prev,
+              rotation: (prev.rotation + rotation) % 360,
+            }
+          : null
+      );
     },
     onDrag: (deltaX, deltaY) => {
       if (!userImage) return;
 
-      setUserImage(prev => prev ? {
-        ...prev,
-        x: Math.max(template.printableArea.x,
-               Math.min(template.printableArea.x + template.printableArea.width - prev.width,
-                      prev.x + deltaX)),
-        y: Math.max(template.printableArea.y,
-               Math.min(template.printableArea.y + template.printableArea.height - prev.height,
-                      prev.y + deltaY))
-      } : null);
+      setUserImage((prev) =>
+        prev
+          ? {
+              ...prev,
+              x: Math.max(
+                template.printableArea.x,
+                Math.min(
+                  template.printableArea.x +
+                    template.printableArea.width -
+                    prev.width,
+                  prev.x + deltaX
+                )
+              ),
+              y: Math.max(
+                template.printableArea.y,
+                Math.min(
+                  template.printableArea.y +
+                    template.printableArea.height -
+                    prev.height,
+                  prev.y + deltaY
+                )
+              ),
+            }
+          : null
+      );
     },
     onDoubleTap: () => {
       // При двойном тапе сбрасываем трансформации
@@ -152,10 +214,10 @@ export const MerchEditor: React.FC<MerchEditorProps> = ({
         setUserImage({
           ...userImage,
           rotation: 0,
-          opacity: 1
+          opacity: 1,
         });
       }
-    }
+    },
   });
 
   return (
@@ -168,13 +230,19 @@ export const MerchEditor: React.FC<MerchEditorProps> = ({
           </IconButton>
           <h1 className="text-lg font-semibold capitalize">{template.name}</h1>
         </div>
-        <IconButton onClick={handleDownload} className="bg-green-500 hover:bg-green-600">
+        <IconButton
+          onClick={handleDownload}
+          className="bg-green-500 hover:bg-green-600"
+        >
           <Download size={24} className="text-white" />
         </IconButton>
       </div>
 
       {/* Canvas Area */}
-      <div ref={stageContainerRef} className="flex-1 overflow-auto bg-gray-100 p-4">
+      <div
+        ref={stageContainerRef}
+        className="flex-1 overflow-auto bg-gray-100 p-4"
+      >
         <div className="max-w-sm mx-auto">
           <Stage
             ref={stageRef}
@@ -183,17 +251,21 @@ export const MerchEditor: React.FC<MerchEditorProps> = ({
             onClick={handleStageClick}
             onTap={handleStageClick}
             className="bg-white rounded-lg shadow-lg mx-auto"
+            pixelRatio={4}
+            listening={true}
           >
             <Layer>
               {/* Шаблон товара */}
               {(() => {
                 const img = new Image();
                 img.src = template.imageUrl;
-                return <KonvaImage
-                  image={img}
-                  width={template.canvasWidth}
-                  height={template.canvasHeight}
-                />;
+                return (
+                  <KonvaImage
+                    image={img}
+                    width={template.canvasWidth}
+                    height={template.canvasHeight}
+                  />
+                );
               })()}
 
               {/* Rectangle для printable area */}
@@ -225,12 +297,19 @@ export const MerchEditor: React.FC<MerchEditorProps> = ({
                     if (!isTouchDevice) {
                       handleImageChange({
                         x: e.target.x(),
-                        y: e.target.y()
+                        y: e.target.y(),
                       });
                     }
                   }}
-                  onTap={() => !isTouchDevice && setSelectedNode(event.currentTarget)}
-                  onClick={() => !isTouchDevice && setSelectedNode(event.currentTarget)}
+                  onTap={() =>
+                    !isTouchDevice && setSelectedNode(event.currentTarget)
+                  }
+                  onClick={() =>
+                    !isTouchDevice && setSelectedNode(event.currentTarget)
+                  }
+                  // Улучшения качества
+                  perfectDrawEnabled={true}
+                  shadowForStrokeEnabled={false}
                 />
               )}
 
@@ -257,14 +336,17 @@ export const MerchEditor: React.FC<MerchEditorProps> = ({
                     return newBox;
                   }}
                   onTransformEnd={(e) => {
-                    if (userImage) {
+                    if (userImage && imageRef.current) {
                       const node = selectedNode;
+                      const newWidth = node.width() * node.scaleX();
+                      const newHeight = node.height() * node.scaleY();
+
                       handleImageChange({
                         x: node.x(),
                         y: node.y(),
-                        width: node.width() * node.scaleX(),
-                        height: node.height() * node.scaleY(),
-                        rotation: node.rotation()
+                        width: newWidth,
+                        height: newHeight,
+                        rotation: node.rotation(),
                       });
 
                       // Сбрасываем масштаб после трансформации
@@ -309,7 +391,7 @@ export const MerchEditor: React.FC<MerchEditorProps> = ({
             <ImageControls
               image={userImage}
               onChange={handleImageChange}
-              onUploadNew={() => fileInputRef.current?.click()}
+              onUploadNew={handleUploadNew}
             />
           )}
         </div>
