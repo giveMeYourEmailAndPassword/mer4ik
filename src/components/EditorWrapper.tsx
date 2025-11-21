@@ -8,6 +8,8 @@ interface EditorWrapperProps {
   userImage: UserImage | null;
   setUserImage: (image: UserImage | null) => void;
   onSwitchTemplate: (templateId: string) => void;
+  tshirtSides?: Record<string, MerchTemplate>;
+  hoodieSides?: Record<string, MerchTemplate>;
 }
 
 export const EditorWrapper = ({
@@ -15,7 +17,9 @@ export const EditorWrapper = ({
   onBack,
   userImage,
   setUserImage,
-  onSwitchTemplate
+  onSwitchTemplate,
+  tshirtSides,
+  hoodieSides
 }: EditorWrapperProps) => {
   const [useFallback, setUseFallback] = useState(false);
 
@@ -39,6 +43,8 @@ export const EditorWrapper = ({
         userImage={userImage}
         setUserImage={setUserImage}
         onSwitchTemplate={onSwitchTemplate}
+        tshirtSides={tshirtSides}
+        hoodieSides={hoodieSides}
       />
     );
   }
@@ -50,6 +56,8 @@ export const EditorWrapper = ({
       userImage={userImage}
       setUserImage={setUserImage}
       onSwitchTemplate={onSwitchTemplate}
+      tshirtSides={tshirtSides}
+      hoodieSides={hoodieSides}
     />
   );
 };

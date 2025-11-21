@@ -1,5 +1,5 @@
-import React, { useState, useRef, useCallback, useEffect } from "react";
-import type { MerchTemplate, UserImage } from "../types";
+import React, { useState, useRef, useCallback } from "react";
+import type { UserImage } from "../types";
 import type { ChangeEvent } from "react";
 import { IconButton } from "./ui/IconButton";
 import {
@@ -11,20 +11,14 @@ import {
   RotateCw,
 } from "lucide-react";
 
-interface SimpleEditorProps {
-  template: MerchTemplate;
-  onBack: () => void;
-  userImage: UserImage | null;
-  setUserImage: (image: UserImage | null) => void;
-  onSwitchTemplate: (templateId: string) => void;
-}
-
 export const SimpleEditor = ({
   template,
   onBack,
   userImage,
   setUserImage,
   onSwitchTemplate,
+  tshirtSides,
+  hoodieSides,
 }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
@@ -45,47 +39,50 @@ export const SimpleEditor = ({
     (event: ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
       if (file) {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const img = new Image();
-          img.onload = () => {
-            // Масштабируем изображение под печатную область
-            const maxWidth = template.printableArea.width * 0.8;
-            const maxHeight = template.printableArea.height * 0.8;
+        // Используем createObjectURL для лучшего качества
+        const imageUrl = URL.createObjectURL(file);
+        const img = new Image();
 
-            let width = img.width;
-            let height = img.height;
+        img.onload = () => {
+          // Сохраняем исходные пропорции изображения
+          const maxWidth = template.printableArea.width * 0.9;
+          const maxHeight = template.printableArea.height * 0.9;
 
-            if (width > maxWidth) {
-              height = (maxWidth / width) * height;
+          let width = img.width;
+          let height = img.height;
+
+          // Масштабируем с сохранением пропорций
+          const aspectRatio = width / height;
+
+          if (width > maxWidth || height > maxHeight) {
+            if (width > height) {
               width = maxWidth;
-            }
-
-            if (height > maxHeight) {
-              width = (maxHeight / height) * width;
+              height = width / aspectRatio;
+            } else {
               height = maxHeight;
+              width = height * aspectRatio;
             }
+          }
 
-            const newUserImage: UserImage = {
-              id: Date.now().toString(),
-              src: e.target?.result as string,
-              x:
-                template.printableArea.x +
-                (template.printableArea.width - width) / 2,
-              y:
-                template.printableArea.y +
-                (template.printableArea.height - height) / 2,
+          const newUserImage: UserImage = {
+            id: Date.now().toString(),
+            src: imageUrl,
+            x:
+              template.printableArea.x +
+              (template.printableArea.width - width) / 2,
+            y:
+              template.printableArea.y +
+              (template.printableArea.height - height) / 2,
               width,
               height,
               rotation: 0,
               opacity: 1,
-            };
-
-            setUserImage(newUserImage);
           };
-          img.src = e.target?.result as string;
+
+          setUserImage(newUserImage);
         };
-        reader.readAsDataURL(file);
+
+        img.src = imageUrl;
       }
     },
     [template, setUserImage]
@@ -295,7 +292,6 @@ export const SimpleEditor = ({
         const scale = currentDistance / initialDistance;
 
         const newWidth = initialScale * scale;
-        const newHeight = (userImage.height / userImage.width) * newWidth;
 
         // Ограничиваем минимальный и максимальный размеры
         const minWidth = 50;
@@ -423,13 +419,22 @@ export const SimpleEditor = ({
         if (!canvas || isDrawingRef.current) return;
 
         const currentTemplate = templateRef.current;
-        const ctx = canvas.getContext("2d");
+        const ctx = canvas.getContext("2d", {
+          alpha: true,
+          desynchronized: false,
+          willReadFrequently: false,
+        });
         if (!ctx) return;
 
         // Устанавливаем флаг, чтобы предотвратить двойную отрисовку
         isDrawingRef.current = true;
 
         try {
+          // Настраиваем высокое качество рендеринга
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.textRenderingOptimization = 'optimizeQuality';
+
           // Очищаем canvas
           ctx.clearRect(
             0,
@@ -440,6 +445,10 @@ export const SimpleEditor = ({
 
           // Рисуем шаблон (если загружен)
           if (templateImageRef.current) {
+            // Устанавливаем высокое качество для шаблона
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+
             ctx.drawImage(
               templateImageRef.current,
               0,
@@ -481,6 +490,10 @@ export const SimpleEditor = ({
                 : userImageRef.current;
 
               if (imageToDraw) {
+                // Устанавливаем высокое качество для отрисовки изображения
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+
                 ctx.drawImage(
                   imageToDraw,
                   -currentImage.width / 2,
@@ -493,6 +506,11 @@ export const SimpleEditor = ({
                 const tempImg = new Image();
                 tempImg.onload = () => {
                   tempDragImageRef.current = tempImg;
+
+                  // Устанавливаем высокое качество для временного изображения
+                  ctx.imageSmoothingEnabled = true;
+                  ctx.imageSmoothingQuality = 'high';
+
                   ctx.drawImage(
                     tempImg,
                     -currentImage.width / 2,
@@ -583,16 +601,63 @@ export const SimpleEditor = ({
   };
 
   const handleDownload = () => {
-    const canvas = canvasRef.current;
     const currentImage = draggedImage || userImage;
-    if (canvas && currentImage) {
-      const link = document.createElement("a");
-      link.download = `merch-${template.name}-${Date.now()}.png`;
-      link.href = canvas.toDataURL();
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+    if (!currentImage || !canvasRef.current) return;
+
+    // Создаем временный canvas для скачивания без области печати
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = template.canvasWidth;
+    tempCanvas.height = template.canvasHeight;
+    const tempCtx = tempCanvas.getContext('2d', {
+      alpha: true,
+      desynchronized: false,
+      willReadFrequently: false,
+    });
+
+    if (!tempCtx) return;
+
+    // Настраиваем высокое качество рендеринга
+    tempCtx.imageSmoothingEnabled = true;
+    tempCtx.imageSmoothingQuality = 'high';
+
+    // Рисуем шаблон
+    if (templateImageRef.current) {
+      tempCtx.drawImage(
+        templateImageRef.current,
+        0,
+        0,
+        template.canvasWidth,
+        template.canvasHeight
+      );
     }
+
+    // Рисуем изображение пользователя (БЕЗ области печати)
+    if (userImageRef.current) {
+      tempCtx.save();
+      tempCtx.globalAlpha = currentImage.opacity;
+      tempCtx.translate(
+        currentImage.x + currentImage.width / 2,
+        currentImage.y + currentImage.height / 2
+      );
+      tempCtx.rotate((currentImage.rotation * Math.PI) / 180);
+
+      tempCtx.drawImage(
+        userImageRef.current,
+        -currentImage.width / 2,
+        -currentImage.height / 2,
+        currentImage.width,
+        currentImage.height
+      );
+      tempCtx.restore();
+    }
+
+    // Скачиваем с временного canvas (без области печати)
+    const link = document.createElement("a");
+    link.download = `merch-${template.name}-${Date.now()}.png`;
+    link.href = tempCanvas.toDataURL('image/png', 1.0); // Максимальное качество
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   return (
@@ -621,30 +686,36 @@ export const SimpleEditor = ({
         </div>
 
         {/* Переключатель передняя/задняя сторона */}
-        <div className="flex items-center justify-center">
-          <div className="bg-gray-100 rounded-lg p-1 flex">
-            <button
-              onClick={() => onSwitchTemplate("tshirt-front")}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                template.id === "tshirt-front"
-                  ? "bg-white text-blue-600 shadow-sm"
-                  : "text-gray-600 hover:text-gray-900"
-              }`}
-            >
-              Перед
-            </button>
-            <button
-              onClick={() => onSwitchTemplate("tshirt-back")}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                template.id === "tshirt-back"
-                  ? "bg-white text-blue-600 shadow-sm"
-                  : "text-gray-600 hover:text-gray-900"
-              }`}
-            >
-              Спина
-            </button>
+        {(template.name === "Футболка" || template.name === "Худи") && (
+          <div className="flex items-center justify-center">
+            <div className="bg-gray-100 rounded-lg p-1 flex">
+              <button
+                onClick={() => onSwitchTemplate(
+                  template.name === "Футболка" ? "tshirt-front" : "hoodie-front"
+                )}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  template.id === (template.name === "Футболка" ? "tshirt-front" : "hoodie-front")
+                    ? "bg-white text-blue-600 shadow-sm"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                Перед
+              </button>
+              <button
+                onClick={() => onSwitchTemplate(
+                  template.name === "Футболка" ? "tshirt-back" : "hoodie-back"
+                )}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  template.id === (template.name === "Футболка" ? "tshirt-back" : "hoodie-back")
+                    ? "bg-white text-blue-600 shadow-sm"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                Спина
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Canvas Area */}
